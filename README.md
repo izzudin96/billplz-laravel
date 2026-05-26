@@ -87,6 +87,63 @@ This applies to bill create/get requests.
 
 ## Usage
 
+### How BillplzClient is resolved in Laravel
+
+`BillplzClient::class` is only a class name string. To call client methods, you need an instance resolved by Laravel's service container.
+
+Preferred patterns:
+
+1. Method injection (clean and explicit)
+
+```php
+use Izzudin96\Billplz\BillplzClient;
+
+public function show(string $billId, BillplzClient $billplz)
+{
+    $bill = $billplz->getBill($billId);
+}
+```
+
+1. Constructor injection (good when used in multiple methods)
+
+```php
+use Izzudin96\Billplz\BillplzClient;
+
+class PaymentController extends Controller
+{
+    public function __construct(private BillplzClient $billplz)
+    {
+    }
+
+    public function show(string $billId)
+    {
+        $bill = $this->billplz->getBill($billId);
+    }
+}
+```
+
+1. Facade usage (shortest call style)
+
+```php
+use Izzudin96\Billplz\Facades\Billplz;
+
+$bill = Billplz::getBill($billId);
+```
+
+1. app helper (works, but usually less preferred than DI)
+
+```php
+use Izzudin96\Billplz\BillplzClient;
+
+$bill = app(BillplzClient::class)->getBill($billId);
+```
+
+Why DI/facade is friendlier:
+
+- Better readability in controllers/services
+- Easier testing and mocking
+- No repeated container lookup calls
+
 ### 1) Create a bill
 
 ```php
