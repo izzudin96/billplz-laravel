@@ -1,0 +1,27 @@
+{
+    "name": "izzudin96/billplz-laravel",
+    "description": "Lightweight Billplz client package for modern Laravel versions.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Izzudin96\\Billplz\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Izzudin96\\Billplz\\BillplzServiceProvider"
+            ],
+            "aliases": {
+                "Billplz": "Izzudin96\\Billplz\\Facades\\Billplz"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
