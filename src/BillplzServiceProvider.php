@@ -22,6 +22,10 @@ class BillplzServiceProvider extends ServiceProvider
                 collectionId: (string) ($config['collection_id'] ?? ''),
                 sandbox: (bool) ($config['sandbox'] ?? false),
                 version: (string) ($config['version'] ?? 'v3'),
+                timeoutSeconds: (int) ($config['timeout_seconds'] ?? 10),
+                retryTimes: (int) ($config['retry_times'] ?? 1),
+                retrySleepMs: (int) ($config['retry_sleep_ms'] ?? 200),
+                userAgent: (string) ($config['user_agent'] ?? 'billplz-laravel-client'),
             );
         });
     }

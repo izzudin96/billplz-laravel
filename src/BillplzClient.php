@@ -4,6 +4,7 @@ namespace Izzudin96\Billplz;
 
 use Izzudin96\Billplz\Exceptions\FailedSignatureVerification;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 
 /**
  * Lightweight BillPlz API client.
@@ -50,7 +51,11 @@ class BillplzClient
         private readonly ?string $xSignatureKey,
         private readonly string $collectionId,
         bool $sandbox = false,
-        string $version = 'v3'
+        string $version = 'v3',
+        private readonly int $timeoutSeconds = 10,
+        private readonly int $retryTimes = 1,
+        private readonly int $retrySleepMs = 200,
+        private readonly string $userAgent = 'billplz-laravel-client'
     ) {
         $version = strtolower(trim($version));
         $version = in_array($version, ['v3', 'v4'], true) ? $version : 'v3';
@@ -77,7 +82,37 @@ class BillplzClient
         string $description,
         array $optional = []
     ): array {
-        $payload = array_filter([
+        $this->guardApiCredentials();
+        $this->guardCollectionId();
+
+        $email = trim($email);
+        $name = trim($name);
+        $description = trim($description);
+        $callbackUrl = trim($callbackUrl);
+
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException('A valid email is required to create a Billplz bill.');
+        }
+
+        if ($name == '') {
+            throw new InvalidArgumentException('Name is required to create a Billplz bill.');
+        }
+
+        if ($description == '') {
+            throw new InvalidArgumentException('Description is required to create a Billplz bill.');
+        }
+
+        if ($callbackUrl == '') {
+            throw new InvalidArgumentException('callbackUrl is required to create a Billplz bill.');
+        }
+
+        if ($amountCents <= 0) {
+            throw new InvalidArgumentException('amountCents must be greater than zero.');
+        }
+
+        $mobile = $this->normalizeMobile($mobile);
+
+        $requiredPayload = [
             'collection_id' => $this->collectionId,
             'email' => $email,
             'mobile' => $mobile,
@@ -85,14 +120,17 @@ class BillplzClient
             'amount' => $amountCents,
             'callback_url' => $callbackUrl,
             'description' => $description,
-            'redirect_url' => $optional['redirect_url'] ?? null,
-            'reference_1_label' => $optional['reference_1_label'] ?? null,
-            'reference_1' => isset($optional['reference_1']) ? (string) $optional['reference_1'] : null,
-            'reference_2_label' => $optional['reference_2_label'] ?? null,
-            'reference_2' => isset($optional['reference_2']) ? (string) $optional['reference_2'] : null,
-        ], fn ($v) => $v !== null && $v !== '');
+        ];
 
-        return Http::withBasicAuth($this->apiKey, '')
+        // Keep required fields authoritative while allowing Billplz-compatible
+        // optional fields to pass through without package changes.
+        $optionalPayload = array_diff_key($optional, array_flip(array_keys($requiredPayload)));
+        $payload = array_filter(
+            array_merge($optionalPayload, $requiredPayload),
+            fn ($v) => $v !== null && $v !== ''
+        );
+
+        return $this->http()
             ->asForm()
             ->post("{$this->baseUrl}/bills", $payload)
             ->throw()
@@ -108,8 +146,16 @@ class BillplzClient
      */
     public function getBill(string $billId): array
     {
-        return Http::withBasicAuth($this->apiKey, '')
-            ->get("{$this->baseUrl}/bills/{$billId}")
+        $this->guardApiCredentials();
+
+        $billId = trim($billId);
+
+        if ($billId == '') {
+            throw new InvalidArgumentException('billId is required.');
+        }
+
+        return $this->http()
+            ->get("{$this->baseUrl}/bills/".rawurlencode($billId))
             ->throw()
             ->json();
     }
@@ -150,7 +196,7 @@ class BillplzClient
         }
 
         return array_merge($billplz, [
-            'paid' => ($billplz['paid'] ?? 'false') === 'true',
+            'paid' => $this->normalizeBoolean($billplz['paid'] ?? false),
         ]);
     }
 
@@ -191,7 +237,7 @@ class BillplzClient
         }
 
         return array_merge($billplz, [
-            'paid' => ($billplz['paid'] ?? 'false') === 'true',
+            'paid' => $this->normalizeBoolean($billplz['paid'] ?? false),
             'signature_valid' => $signatureValid,
         ]);
     }
@@ -215,7 +261,7 @@ class BillplzClient
         }
 
         return array_merge($params, [
-            'paid' => ($params['paid'] ?? 'false') === 'true',
+            'paid' => $this->normalizeBoolean($params['paid'] ?? false),
         ]);
     }
 
@@ -249,9 +295,65 @@ class BillplzClient
         }
 
         return array_merge($params, [
-            'paid' => ($params['paid'] ?? 'false') === 'true',
+            'paid' => $this->normalizeBoolean($params['paid'] ?? false),
             'signature_valid' => $signatureValid,
         ]);
+    }
+
+    private function http()
+    {
+        $request = Http::withBasicAuth($this->apiKey, '')
+            ->withUserAgent($this->userAgent)
+            ->acceptJson()
+            ->timeout(max(1, $this->timeoutSeconds));
+
+        if ($this->retryTimes > 0) {
+            $request = $request->retry($this->retryTimes, max(0, $this->retrySleepMs));
+        }
+
+        return $request;
+    }
+
+    private function guardApiCredentials(): void
+    {
+        if (trim($this->apiKey) == '') {
+            throw new InvalidArgumentException('Billplz API key is not configured.');
+        }
+    }
+
+    private function guardCollectionId(): void
+    {
+        if (trim($this->collectionId) == '') {
+            throw new InvalidArgumentException('Billplz collection_id is not configured.');
+        }
+    }
+
+    private function normalizeMobile(?string $mobile): ?string
+    {
+        if ($mobile === null) {
+            return null;
+        }
+
+        $normalized = preg_replace('/[^0-9+]/', '', $mobile);
+
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function normalizeBoolean(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value)) {
+            return $value === 1;
+        }
+
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+        }
+
+        return false;
     }
 
     /**

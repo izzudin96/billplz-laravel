@@ -8,6 +8,8 @@ It provides a small Billplz client for common payment flow tasks:
 - fetch bill status
 - verify callback/webhook signatures (strict mode)
 - parse callback/webhook payloads (best-effort mode)
+- configurable HTTP timeout/retry behavior
+- safe input/config guards with clear exceptions
 
 ## Features
 
@@ -49,6 +51,10 @@ BILLPLZ_X_SIGNATURE=
 BILLPLZ_COLLECTION_ID=
 BILLPLZ_VERSION=v3
 BILLPLZ_SANDBOX=false
+BILLPLZ_TIMEOUT_SECONDS=10
+BILLPLZ_RETRY_TIMES=1
+BILLPLZ_RETRY_SLEEP_MS=200
+BILLPLZ_USER_AGENT=billplz-laravel-client
 ```
 
 Config supports both `x-signature` and `x_signature` keys for compatibility.
@@ -63,9 +69,21 @@ return [
         'collection_id' => env('BILLPLZ_COLLECTION_ID'),
         'sandbox' => env('BILLPLZ_SANDBOX', false),
         'version' => env('BILLPLZ_VERSION', 'v3'),
+        'timeout_seconds' => env('BILLPLZ_TIMEOUT_SECONDS', 10),
+        'retry_times' => env('BILLPLZ_RETRY_TIMES', 1),
+        'retry_sleep_ms' => env('BILLPLZ_RETRY_SLEEP_MS', 200),
+        'user_agent' => env('BILLPLZ_USER_AGENT', 'billplz-laravel-client'),
     ],
 ];
 ```
+
+### HTTP behavior defaults
+
+- Timeout: 10 seconds
+- Retries: 1
+- Retry backoff: 200ms
+
+This applies to bill create/get requests.
 
 ## Usage
 
@@ -87,6 +105,8 @@ $bill = app(BillplzClient::class)->createBill(
         'reference_1' => 'BK-10021',
         'reference_2_label' => 'Customer ID',
         'reference_2' => 'CUS-890',
+        // Additional Billplz-supported fields can be passed through here.
+        // Required fields from method params always take precedence.
     ],
 );
 
@@ -278,3 +298,43 @@ Route::post('/payments/billplz/webhook', [BillplzPaymentController::class, 'webh
 - Prefer webhook as the authoritative source for payment completion.
 - Redirect callback can be delayed, interrupted, or tampered; treat it as user-facing signal only.
 - If `BILLPLZ_X_SIGNATURE` is not configured, signature checks are skipped and `signature_valid` is `null` in parse methods.
+- `createBill()` throws `InvalidArgumentException` when required config or inputs are missing/invalid.
+    Example checks: empty API key, empty collection ID, invalid email, amount <= 0.
+
+## Testing
+
+The package includes PHPUnit + Orchestra Testbench tests.
+
+Run tests locally:
+
+```bash
+composer install
+composer test
+```
+
+Current test coverage includes:
+
+- `createBill()` request payload and response handling.
+- Input validation exceptions for invalid payloads.
+- Strict signature verification failure behavior.
+- Best-effort parsing behavior for redirect and webhook.
+- URL encoding behavior in `getBill()`.
+
+## GitHub Actions CI
+
+CI workflow is available at `.github/workflows/tests.yml` and runs on:
+
+- push to `main`
+- pull requests
+
+Matrix:
+
+- PHP 8.2
+- PHP 8.3
+- PHP 8.4
+
+Pipeline steps:
+
+- `composer validate --strict`
+- `composer install`
+- `composer test`
