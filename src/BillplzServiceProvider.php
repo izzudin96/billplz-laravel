@@ -18,7 +18,7 @@ class BillplzServiceProvider extends ServiceProvider
 
             return new BillplzClient(
                 apiKey: (string) ($config['key'] ?? ''),
-                xSignatureKey: $config['x-signature'] ?? null,
+                xSignatureKey: $config['x-signature'] ?? $config['x_signature'] ?? null,
                 collectionId: (string) ($config['collection_id'] ?? ''),
                 sandbox: (bool) ($config['sandbox'] ?? false),
                 version: (string) ($config['version'] ?? 'v3'),

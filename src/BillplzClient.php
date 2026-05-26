@@ -155,6 +155,48 @@ class BillplzClient
     }
 
     /**
+     * Best-effort redirect parser.
+     *
+     * Returns null only when required redirect fields are missing.
+     * Signature validity is exposed as `signature_valid`.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array<string, mixed>|null
+     */
+    public function parseRedirect(array $params): ?array
+    {
+        $billplz = $params['billplz'] ?? null;
+
+        if (! is_array($billplz) || ! isset($billplz['id'])) {
+            return null;
+        }
+
+        $signatureValid = null;
+
+        if ($this->xSignatureKey !== null) {
+            if (! isset($billplz['x_signature'])) {
+                $signatureValid = false;
+            } else {
+                $flat = [
+                    'billplzid' => $billplz['id'] ?? '',
+                    'billplzpaid_at' => $billplz['paid_at'] ?? '',
+                    'billplzpaid' => $billplz['paid'] ?? '',
+                    'billplztransaction_id' => $billplz['transaction_id'] ?? '',
+                    'billplztransaction_status' => $billplz['transaction_status'] ?? '',
+                    'x_signature' => $billplz['x_signature'],
+                ];
+
+                $signatureValid = $this->verifySignature($flat, self::REDIRECT_PARAMETERS, (string) $billplz['x_signature']);
+            }
+        }
+
+        return array_merge($billplz, [
+            'paid' => ($billplz['paid'] ?? 'false') === 'true',
+            'signature_valid' => $signatureValid,
+        ]);
+    }
+
+    /**
      * Parse and verify the signed webhook POST from BillPlz.
      *
      * @param  array<string, mixed>  $params
@@ -174,6 +216,41 @@ class BillplzClient
 
         return array_merge($params, [
             'paid' => ($params['paid'] ?? 'false') === 'true',
+        ]);
+    }
+
+    /**
+     * Best-effort webhook parser.
+     *
+     * Webhook should remain authoritative, so this returns null when signature
+     * is configured but missing/invalid.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array<string, mixed>|null
+     */
+    public function parseWebhook(array $params): ?array
+    {
+        if (! isset($params['id'])) {
+            return null;
+        }
+
+        $signatureValid = null;
+
+        if ($this->xSignatureKey !== null) {
+            if (! isset($params['x_signature'])) {
+                return null;
+            }
+
+            $signatureValid = $this->verifySignature($params, self::WEBHOOK_PARAMETERS, (string) $params['x_signature']);
+
+            if (! $signatureValid) {
+                return null;
+            }
+        }
+
+        return array_merge($params, [
+            'paid' => ($params['paid'] ?? 'false') === 'true',
+            'signature_valid' => $signatureValid,
         ]);
     }
 
