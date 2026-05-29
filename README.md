@@ -395,3 +395,54 @@ Pipeline steps:
 - `composer validate --strict`
 - `composer install`
 - `composer test`
+
+## Automated versioning and tagging
+
+This repository now uses Conventional Commits + semantic-release on `main`.
+
+When commits are merged to `main`, GitHub Actions will:
+
+- run package checks (`composer validate`, install, tests)
+- analyze commit messages since the last tag
+- calculate the next semantic version
+- create a Git tag and GitHub Release automatically
+
+### Commit types and version bumps
+
+- `fix:` -> patch bump (for example `1.2.3` -> `1.2.4`)
+- `feat:` -> minor bump (for example `1.2.3` -> `1.3.0`)
+- `feat!:` or `BREAKING CHANGE:` in commit body -> major bump (for example `1.2.3` -> `2.0.0`)
+- other types (`docs:`, `chore:`, `test:` etc.) -> no release by default
+
+Examples:
+
+```text
+fix: handle empty callback payload
+feat: add retry configuration for webhook verification
+feat!: rename verifyWebhook signature contract
+```
+
+### Best practice workflow
+
+- Use PR titles in Conventional Commit format (checked by CI).
+- Keep PRs focused so release notes are clean.
+- Use `!` only for real breaking API changes.
+- Include migration notes in PR description when breaking changes are introduced.
+
+### One-time repository setup
+
+No extra secret is needed for basic releases. The workflow uses GitHub's built-in `GITHUB_TOKEN`.
+
+If this is the first release, create your first baseline tag so the next bump has a reference point:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Workflows added:
+
+- `.github/workflows/tests.yml` -> test matrix
+- `.github/workflows/commitlint.yml` -> enforce Conventional Commit style on PR titles
+- `.github/workflows/release.yml` -> compute next version and publish tag/release
+- `.releaserc.json` -> semantic-release rules
