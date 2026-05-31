@@ -2,6 +2,9 @@
 
 namespace Izzudin96\Billplz;
 
+use Izzudin96\Billplz\DTOs\BillResponse;
+use Izzudin96\Billplz\DTOs\RedirectPayload;
+use Izzudin96\Billplz\DTOs\WebhookPayload;
 use Izzudin96\Billplz\Exceptions\FailedSignatureVerification;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
@@ -69,8 +72,6 @@ class BillplzClient
      * Create a new bill in BillPlz.
      *
      * @param  array<string, mixed>  $optional
-     * @return array<string, mixed>
-     *
      * @throws \Illuminate\Http\Client\RequestException
      */
     public function createBill(
@@ -81,7 +82,7 @@ class BillplzClient
         string $callbackUrl,
         string $description,
         array $optional = []
-    ): array {
+    ): BillResponse {
         $this->guardApiCredentials();
         $this->guardCollectionId();
 
@@ -122,29 +123,27 @@ class BillplzClient
             'description' => $description,
         ];
 
-        // Keep required fields authoritative while allowing Billplz-compatible
-        // optional fields to pass through without package changes.
         $optionalPayload = array_diff_key($optional, array_flip(array_keys($requiredPayload)));
         $payload = array_filter(
             array_merge($optionalPayload, $requiredPayload),
             fn ($v) => $v !== null && $v !== ''
         );
 
-        return $this->http()
-            ->asForm()
-            ->post("{$this->baseUrl}/bills", $payload)
-            ->throw()
-            ->json();
+        return BillResponse::fromArray(
+            $this->http()
+                ->asForm()
+                ->post("{$this->baseUrl}/bills", $payload)
+                ->throw()
+                ->json() ?? []
+        );
     }
 
     /**
      * Retrieve an existing bill from BillPlz.
      *
-     * @return array<string, mixed>
-     *
      * @throws \Illuminate\Http\Client\RequestException
      */
-    public function getBill(string $billId): array
+    public function getBill(string $billId): BillResponse
     {
         $this->guardApiCredentials();
 
@@ -154,21 +153,21 @@ class BillplzClient
             throw new InvalidArgumentException('billId is required.');
         }
 
-        return $this->http()
-            ->get("{$this->baseUrl}/bills/".rawurlencode($billId))
-            ->throw()
-            ->json();
+        return BillResponse::fromArray(
+            $this->http()
+                ->get("{$this->baseUrl}/bills/".rawurlencode($billId))
+                ->throw()
+                ->json() ?? []
+        );
     }
 
     /**
      * Parse and verify the signed redirect callback from BillPlz.
      *
      * @param  array<string, mixed>  $params
-     * @return array<string, mixed>
-     *
      * @throws FailedSignatureVerification
      */
-    public function verifyRedirect(array $params): array
+    public function verifyRedirect(array $params): RedirectPayload
     {
         $billplz = $params['billplz'] ?? null;
 
@@ -180,24 +179,28 @@ class BillplzClient
             throw new FailedSignatureVerification('Missing billplz x_signature in redirect.');
         }
 
-        if ($this->xSignatureKey !== null) {
-            $flat = [
-                'billplzid' => $billplz['id'] ?? '',
-                'billplzpaid_at' => $billplz['paid_at'] ?? '',
-                'billplzpaid' => $billplz['paid'] ?? '',
-                'billplztransaction_id' => $billplz['transaction_id'] ?? '',
-                'billplztransaction_status' => $billplz['transaction_status'] ?? '',
-                'x_signature' => $billplz['x_signature'],
-            ];
+        $signatureValid = null;
 
-            if (! $this->verifySignature($flat, self::REDIRECT_PARAMETERS, $billplz['x_signature'])) {
+        if ($this->xSignatureKey !== null) {
+            $signatureValid = $this->verifySignature(
+                $this->buildRedirectSignatureData($billplz),
+                self::REDIRECT_PARAMETERS,
+                (string) $billplz['x_signature']
+            );
+
+            if (! $signatureValid) {
                 throw new FailedSignatureVerification;
             }
         }
 
-        return array_merge($billplz, [
+        return RedirectPayload::fromArray([
+            'id' => $billplz['id'] ?? null,
+            'paid_at' => $billplz['paid_at'] ?? null,
             'paid' => $this->normalizeBoolean($billplz['paid'] ?? false),
-        ]);
+            'transaction_id' => $billplz['transaction_id'] ?? null,
+            'transaction_status' => $billplz['transaction_status'] ?? null,
+            'x_signature' => $billplz['x_signature'] ?? null,
+        ], $signatureValid);
     }
 
     /**
@@ -207,9 +210,8 @@ class BillplzClient
      * Signature validity is exposed as `signature_valid`.
      *
      * @param  array<string, mixed>  $params
-     * @return array<string, mixed>|null
      */
-    public function parseRedirect(array $params): ?array
+    public function parseRedirect(array $params): ?RedirectPayload
     {
         $billplz = $params['billplz'] ?? null;
 
@@ -223,46 +225,67 @@ class BillplzClient
             if (! isset($billplz['x_signature'])) {
                 $signatureValid = false;
             } else {
-                $flat = [
-                    'billplzid' => $billplz['id'] ?? '',
-                    'billplzpaid_at' => $billplz['paid_at'] ?? '',
-                    'billplzpaid' => $billplz['paid'] ?? '',
-                    'billplztransaction_id' => $billplz['transaction_id'] ?? '',
-                    'billplztransaction_status' => $billplz['transaction_status'] ?? '',
-                    'x_signature' => $billplz['x_signature'],
-                ];
-
-                $signatureValid = $this->verifySignature($flat, self::REDIRECT_PARAMETERS, (string) $billplz['x_signature']);
+                $signatureValid = $this->verifySignature(
+                    $this->buildRedirectSignatureData($billplz),
+                    self::REDIRECT_PARAMETERS,
+                    (string) $billplz['x_signature']
+                );
             }
         }
 
-        return array_merge($billplz, [
+        return RedirectPayload::fromArray([
+            'id' => $billplz['id'] ?? null,
+            'paid_at' => $billplz['paid_at'] ?? null,
             'paid' => $this->normalizeBoolean($billplz['paid'] ?? false),
-            'signature_valid' => $signatureValid,
-        ]);
+            'transaction_id' => $billplz['transaction_id'] ?? null,
+            'transaction_status' => $billplz['transaction_status'] ?? null,
+            'x_signature' => $billplz['x_signature'] ?? null,
+        ], $signatureValid);
     }
 
     /**
      * Parse and verify the signed webhook POST from BillPlz.
      *
      * @param  array<string, mixed>  $params
-     * @return array<string, mixed>
-     *
      * @throws FailedSignatureVerification
      */
-    public function verifyWebhook(array $params): array
+    public function verifyWebhook(array $params): WebhookPayload
     {
         if ($this->xSignatureKey !== null && ! isset($params['x_signature'])) {
             throw new FailedSignatureVerification('Missing x_signature in webhook payload.');
         }
 
-        if ($this->xSignatureKey !== null && ! $this->verifySignature($params, self::WEBHOOK_PARAMETERS, $params['x_signature'])) {
-            throw new FailedSignatureVerification;
+        $signatureValid = null;
+
+        if ($this->xSignatureKey !== null) {
+            $signatureValid = $this->verifySignature(
+                $this->buildWebhookSignatureData($params),
+                self::WEBHOOK_PARAMETERS,
+                (string) $params['x_signature']
+            );
+
+            if (! $signatureValid) {
+                throw new FailedSignatureVerification;
+            }
         }
 
-        return array_merge($params, [
+        return WebhookPayload::fromArray([
+            'amount' => $params['amount'] ?? null,
+            'collection_id' => $params['collection_id'] ?? null,
+            'due_at' => $params['due_at'] ?? null,
+            'email' => $params['email'] ?? null,
+            'id' => $params['id'] ?? null,
+            'mobile' => $params['mobile'] ?? null,
+            'name' => $params['name'] ?? null,
+            'paid_amount' => $params['paid_amount'] ?? null,
+            'paid_at' => $params['paid_at'] ?? null,
             'paid' => $this->normalizeBoolean($params['paid'] ?? false),
-        ]);
+            'state' => $params['state'] ?? null,
+            'transaction_id' => $params['transaction_id'] ?? null,
+            'transaction_status' => $params['transaction_status'] ?? null,
+            'url' => $params['url'] ?? null,
+            'x_signature' => $params['x_signature'] ?? null,
+        ], $signatureValid);
     }
 
     /**
@@ -272,9 +295,8 @@ class BillplzClient
      * is configured but missing/invalid.
      *
      * @param  array<string, mixed>  $params
-     * @return array<string, mixed>|null
      */
-    public function parseWebhook(array $params): ?array
+    public function parseWebhook(array $params): ?WebhookPayload
     {
         if (! isset($params['id'])) {
             return null;
@@ -287,17 +309,34 @@ class BillplzClient
                 return null;
             }
 
-            $signatureValid = $this->verifySignature($params, self::WEBHOOK_PARAMETERS, (string) $params['x_signature']);
+            $signatureValid = $this->verifySignature(
+                $this->buildWebhookSignatureData($params),
+                self::WEBHOOK_PARAMETERS,
+                (string) $params['x_signature']
+            );
 
             if (! $signatureValid) {
                 return null;
             }
         }
 
-        return array_merge($params, [
+        return WebhookPayload::fromArray([
+            'amount' => $params['amount'] ?? null,
+            'collection_id' => $params['collection_id'] ?? null,
+            'due_at' => $params['due_at'] ?? null,
+            'email' => $params['email'] ?? null,
+            'id' => $params['id'] ?? null,
+            'mobile' => $params['mobile'] ?? null,
+            'name' => $params['name'] ?? null,
+            'paid_amount' => $params['paid_amount'] ?? null,
+            'paid_at' => $params['paid_at'] ?? null,
             'paid' => $this->normalizeBoolean($params['paid'] ?? false),
-            'signature_valid' => $signatureValid,
-        ]);
+            'state' => $params['state'] ?? null,
+            'transaction_id' => $params['transaction_id'] ?? null,
+            'transaction_status' => $params['transaction_status'] ?? null,
+            'url' => $params['url'] ?? null,
+            'x_signature' => $params['x_signature'] ?? null,
+        ], $signatureValid);
     }
 
     private function http()
@@ -358,6 +397,9 @@ class BillplzClient
 
     /**
      * Compute and verify an HMAC-SHA256 X-Signature.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<int, string>  $parameters
      */
     private function verifySignature(array $data, array $parameters, string $givenHash): bool
     {
@@ -370,5 +412,44 @@ class BillplzClient
         $expected = hash_hmac('sha256', implode('|', $parts), (string) $this->xSignatureKey);
 
         return hash_equals($expected, $givenHash);
+    }
+
+    /**
+     * @param  array<string, mixed>  $billplz
+     * @return array<string, mixed>
+     */
+    private function buildRedirectSignatureData(array $billplz): array
+    {
+        return [
+            'billplzid' => $billplz['id'] ?? '',
+            'billplzpaid_at' => $billplz['paid_at'] ?? '',
+            'billplzpaid' => $billplz['paid'] ?? '',
+            'billplztransaction_id' => $billplz['transaction_id'] ?? '',
+            'billplztransaction_status' => $billplz['transaction_status'] ?? '',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return array<string, mixed>
+     */
+    private function buildWebhookSignatureData(array $params): array
+    {
+        return [
+            'amount' => $params['amount'] ?? '',
+            'collection_id' => $params['collection_id'] ?? '',
+            'due_at' => $params['due_at'] ?? '',
+            'email' => $params['email'] ?? '',
+            'id' => $params['id'] ?? '',
+            'mobile' => $params['mobile'] ?? '',
+            'name' => $params['name'] ?? '',
+            'paid_amount' => $params['paid_amount'] ?? '',
+            'paid_at' => $params['paid_at'] ?? '',
+            'paid' => $params['paid'] ?? '',
+            'state' => $params['state'] ?? '',
+            'transaction_id' => $params['transaction_id'] ?? '',
+            'transaction_status' => $params['transaction_status'] ?? '',
+            'url' => $params['url'] ?? '',
+        ];
     }
 }
