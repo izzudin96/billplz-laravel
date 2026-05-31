@@ -2,12 +2,15 @@
 
 A lightweight Billplz package for Laravel 11/12/13.
 
+It returns typed DTOs for bills, redirects, and webhooks so developers can use property access and IDE autocomplete instead of fragile array keys.
+
 It provides a small Billplz client for common payment flow tasks:
 
 - create bills
 - fetch bill status
 - verify callback/webhook signatures (strict mode)
 - parse callback/webhook payloads (best-effort mode)
+- use DTO return objects with property access
 - configurable HTTP timeout/retry behavior
 - safe input/config guards with clear exceptions
 
@@ -19,15 +22,16 @@ It provides a small Billplz client for common payment flow tasks:
 - Verify webhook signature
 - Best-effort redirect parsing
 - Best-effort webhook parsing
+- DTO return objects for autocomplete-friendly access
 
 ## When to use which method
 
 - `verifyRedirect()` and `verifyWebhook()`:
-    Use when you want hard security checks and prefer exceptions on invalid signatures.
+    Use when you want hard security checks and prefer exceptions on invalid signatures. Both return typed payload objects.
 - `parseRedirect()`:
-    Use when redirect/callback is for UX only and webhook is your source of truth.
+    Use when redirect/callback is for UX only and webhook is your source of truth. The returned DTO exposes `signature_valid`.
 - `parseWebhook()`:
-    Use when you want null-on-failure behavior instead of exceptions.
+    Use when you want null-on-failure behavior instead of exceptions. The returned DTO exposes `signature_valid`.
 
 ## Installation
 
@@ -168,8 +172,8 @@ $bill = app(BillplzClient::class)->createBill(
 );
 
 // Save for reconciliation and redirect user to Billplz page
-$billId = $bill['id'];
-$paymentUrl = $bill['url'];
+$billId = $bill->id;
+$paymentUrl = $bill->url;
 ```
 
 ### 2) Get bill status
@@ -180,9 +184,9 @@ use Izzudin96\Billplz\BillplzClient;
 $bill = app(BillplzClient::class)->getBill($billId);
 
 // Examples of useful fields from Billplz response:
-// $bill['paid']
-// $bill['paid_at']
-// $bill['state']
+// $bill->paid
+// $bill->paid_at
+// $bill->state
 ```
 
 ### 3) Strict signature verification
@@ -218,12 +222,12 @@ if ($redirect === null) {
 }
 
 // signature_valid can be true, false, or null (when signature key not configured)
-$isPaid = (bool) ($redirect['paid'] ?? false);
+$isPaid = (bool) $redirect->paid;
 
 return redirect()->route('payments.result')->with([
-    'bill_id' => $redirect['id'] ?? null,
+    'bill_id' => $redirect->id,
     'paid' => $isPaid,
-    'signature_valid' => $redirect['signature_valid'],
+    'signature_valid' => $redirect->signature_valid,
 ]);
 ```
 
@@ -240,7 +244,7 @@ if ($payload === null) {
     return response()->json(['message' => 'Invalid payload'], 403);
 }
 
-if (($payload['paid'] ?? false) === true) {
+if ($payload->paid === true) {
     // Mark order/booking as paid
 }
 
@@ -279,11 +283,11 @@ class BillplzPaymentController extends Controller
         );
 
         $order->update([
-            'billplz_bill_id' => $bill['id'],
-            'payment_url' => $bill['url'],
+            'billplz_bill_id' => $bill->id,
+            'payment_url' => $bill->url,
         ]);
 
-        return redirect()->away($bill['url']);
+        return redirect()->away($bill->url);
     }
 
     public function callback(Request $request, BillplzClient $billplz): RedirectResponse
@@ -296,7 +300,7 @@ class BillplzPaymentController extends Controller
         }
 
         return redirect()->route('orders.index')->with('status',
-            ($redirect['paid'] ?? false)
+            ($redirect->paid ?? false)
                 ? 'Payment received. Waiting confirmation.'
                 : 'Payment not completed.'
         );
@@ -310,13 +314,13 @@ class BillplzPaymentController extends Controller
             return response()->json(['message' => 'Invalid signature'], 403);
         }
 
-        $order = Order::where('billplz_bill_id', $payload['id'] ?? '')->first();
+        $order = Order::where('billplz_bill_id', $payload->id ?? '')->first();
 
         if (! $order) {
             return response()->json(['message' => 'Order not found'], 404);
         }
 
-        if (($payload['paid'] ?? false) === true) {
+        if ($payload->paid === true) {
             $order->update([
                 'payment_status' => 'paid',
             ]);
