@@ -2,8 +2,12 @@
 
 namespace Izzudin96\Billplz\DTOs;
 
-final readonly class WebhookPayload
+use Izzudin96\Billplz\Concerns\NormalizesBooleans;
+use JsonSerializable;
+
+final readonly class WebhookPayload implements JsonSerializable
 {
+    use NormalizesBooleans;
     public function __construct(
         public ?string $amount = null,
         public ?string $collection_id = null,
@@ -66,20 +70,53 @@ final readonly class WebhookPayload
         );
     }
 
-    private static function normalizeBoolean(mixed $value): bool
+    public function toArray(): array
     {
-        if (is_bool($value)) {
-            return $value;
-        }
+        $data = [
+            'amount' => $this->amount,
+            'collection_id' => $this->collection_id,
+            'due_at' => $this->due_at,
+            'email' => $this->email,
+            'id' => $this->id,
+            'mobile' => $this->mobile,
+            'name' => $this->name,
+            'paid_amount' => $this->paid_amount,
+            'paid_at' => $this->paid_at,
+            'paid' => $this->paid,
+            'state' => $this->state,
+            'transaction_id' => $this->transaction_id,
+            'transaction_status' => $this->transaction_status,
+            'url' => $this->url,
+            'x_signature' => $this->x_signature,
+            'signature_valid' => $this->signature_valid,
+        ];
 
-        if (is_int($value)) {
-            return $value === 1;
-        }
+        $data = array_filter($data, static fn ($value) => $value !== null);
 
-        if (is_string($value)) {
-            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
-        }
+        return array_merge($this->extra, $data);
+    }
 
-        return false;
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
+    }
+
+    public function toBillResponse(): BillResponse
+    {
+        return BillResponse::fromArray(array_merge([
+            'id' => $this->id,
+            'amount' => is_numeric($this->amount) ? (int) $this->amount : null,
+            'collection_id' => $this->collection_id,
+            'email' => $this->email,
+            'mobile' => $this->mobile,
+            'name' => $this->name,
+            'paid_at' => $this->paid_at,
+            'paid' => $this->paid,
+            'state' => $this->state,
+            'transaction_id' => $this->transaction_id,
+            'transaction_status' => $this->transaction_status,
+            'url' => $this->url,
+            'x_signature' => $this->x_signature,
+        ], $this->extra));
     }
 }

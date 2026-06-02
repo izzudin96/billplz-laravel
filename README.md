@@ -362,6 +362,63 @@ Route::post('/payments/billplz/webhook', [BillplzPaymentController::class, 'webh
 - `createBill()` throws `InvalidArgumentException` when required config or inputs are missing/invalid.
     Example checks: empty API key, empty collection ID, invalid email, amount <= 0.
 
+## Working with DTOs
+
+### Serializing to array/JSON
+
+All DTOs implement `JsonSerializable` and expose a `toArray()` method:
+
+```php
+$bill = $billplz->getBill($billId);
+$data = $bill->toArray();           // array
+$json = json_encode($bill);         // JSON string
+```
+
+Unknown fields returned by Billplz are preserved in `$bill->extra` and included in both `toArray()` and `json_encode()` output. Known keys always take precedence over `extra`.
+
+### Converting to BillResponse
+
+Redirect and webhook payloads can be normalized into a `BillResponse` for consistent storage:
+
+```php
+$bill = $webhookPayload->toBillResponse();
+$bill = $redirectPayload->toBillResponse();
+```
+
+`WebhookPayload::toBillResponse()` casts `amount` from string to int automatically. Fields not present in the source payload (e.g., `description`, `redirect_url`) will be `null`.
+
+### Merging bills
+
+Combine a stored bill with an incoming webhook update — non-null incoming values override existing values:
+
+```php
+$stored = BillResponse::fromArray($cachedData);
+$updated = $stored->merge($webhookPayload->toBillResponse());
+```
+
+### Eloquent cast
+
+Store bill data in a JSON column without writing a custom cast:
+
+```php
+use Izzudin96\Billplz\Casts\BillplzBill;
+
+class Order extends Model
+{
+    protected $casts = [
+        'billplz_data' => BillplzBill::class,
+    ];
+}
+
+// Storing
+$order->billplz_data = $billplz->createBill(...);
+
+// Retrieving — returns BillResponse, null when column is empty
+$bill = $order->billplz_data;
+```
+
+The cast also accepts plain arrays on assignment (`$order->billplz_data = ['id' => '...', ...]`) and converts them into a `BillResponse`.
+
 ## Testing
 
 The package includes PHPUnit + Orchestra Testbench tests.

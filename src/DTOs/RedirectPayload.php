@@ -2,8 +2,12 @@
 
 namespace Izzudin96\Billplz\DTOs;
 
-final readonly class RedirectPayload
+use Izzudin96\Billplz\Concerns\NormalizesBooleans;
+use JsonSerializable;
+
+final readonly class RedirectPayload implements JsonSerializable
 {
+    use NormalizesBooleans;
     public function __construct(
         public ?string $id = null,
         public ?string $paid_at = null,
@@ -39,20 +43,37 @@ final readonly class RedirectPayload
         );
     }
 
-    private static function normalizeBoolean(mixed $value): bool
+    public function toArray(): array
     {
-        if (is_bool($value)) {
-            return $value;
-        }
+        $data = [
+            'id' => $this->id,
+            'paid_at' => $this->paid_at,
+            'paid' => $this->paid,
+            'transaction_id' => $this->transaction_id,
+            'transaction_status' => $this->transaction_status,
+            'x_signature' => $this->x_signature,
+            'signature_valid' => $this->signature_valid,
+        ];
 
-        if (is_int($value)) {
-            return $value === 1;
-        }
+        $data = array_filter($data, static fn ($value) => $value !== null);
 
-        if (is_string($value)) {
-            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
-        }
+        return array_merge($this->extra, $data);
+    }
 
-        return false;
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
+    }
+
+    public function toBillResponse(): BillResponse
+    {
+        return BillResponse::fromArray(array_merge([
+            'id' => $this->id,
+            'paid' => $this->paid,
+            'paid_at' => $this->paid_at,
+            'transaction_id' => $this->transaction_id,
+            'transaction_status' => $this->transaction_status,
+            'x_signature' => $this->x_signature,
+        ], $this->extra));
     }
 }
