@@ -2,8 +2,12 @@
 
 namespace Izzudin96\Billplz\DTOs;
 
-final readonly class BillResponse
+use Izzudin96\Billplz\Concerns\NormalizesBooleans;
+use JsonSerializable;
+
+final readonly class BillResponse implements JsonSerializable
 {
+    use NormalizesBooleans;
     public function __construct(
         public ?string $id = null,
         public ?string $url = null,
@@ -81,20 +85,45 @@ final readonly class BillResponse
         );
     }
 
-    private static function normalizeBoolean(mixed $value): bool
+    public function toArray(): array
     {
-        if (is_bool($value)) {
-            return $value;
-        }
+        $data = [
+            'id' => $this->id,
+            'url' => $this->url,
+            'collection_id' => $this->collection_id,
+            'email' => $this->email,
+            'mobile' => $this->mobile,
+            'name' => $this->name,
+            'amount' => $this->amount,
+            'description' => $this->description,
+            'callback_url' => $this->callback_url,
+            'redirect_url' => $this->redirect_url,
+            'reference_1' => $this->reference_1,
+            'reference_1_label' => $this->reference_1_label,
+            'reference_2' => $this->reference_2,
+            'reference_2_label' => $this->reference_2_label,
+            'paid_at' => $this->paid_at,
+            'paid' => $this->paid,
+            'state' => $this->state,
+            'transaction_id' => $this->transaction_id,
+            'transaction_status' => $this->transaction_status,
+            'x_signature' => $this->x_signature,
+        ];
 
-        if (is_int($value)) {
-            return $value === 1;
-        }
+        $data = array_filter($data, static fn ($value) => $value !== null);
 
-        if (is_string($value)) {
-            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
-        }
+        return array_merge($this->extra, $data);
+    }
 
-        return false;
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
+    }
+
+    public function merge(self $incoming): self
+    {
+        $merged = array_merge($this->toArray(), $incoming->toArray());
+
+        return self::fromArray($merged);
     }
 }
