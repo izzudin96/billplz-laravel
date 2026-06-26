@@ -3,11 +3,13 @@
 namespace Izzudin96\Billplz\DTOs;
 
 use Izzudin96\Billplz\Concerns\NormalizesBooleans;
+use Izzudin96\Billplz\Concerns\NormalizesStrings;
 use JsonSerializable;
 
 final readonly class RedirectPayload implements JsonSerializable
 {
     use NormalizesBooleans;
+    use NormalizesStrings;
     public function __construct(
         public ?string $id = null,
         public ?string $paid_at = null,
@@ -32,12 +34,12 @@ final readonly class RedirectPayload implements JsonSerializable
         ];
 
         return new self(
-            id: isset($payload['id']) ? (string) $payload['id'] : null,
-            paid_at: isset($payload['paid_at']) ? (string) $payload['paid_at'] : null,
+            id: self::toStringOrNull($payload['id'] ?? null),
+            paid_at: self::toStringOrNull($payload['paid_at'] ?? null),
             paid: array_key_exists('paid', $payload) ? self::normalizeBoolean($payload['paid']) : null,
-            transaction_id: isset($payload['transaction_id']) ? (string) $payload['transaction_id'] : null,
-            transaction_status: isset($payload['transaction_status']) ? (string) $payload['transaction_status'] : null,
-            x_signature: isset($payload['x_signature']) ? (string) $payload['x_signature'] : null,
+            transaction_id: self::toStringOrNull($payload['transaction_id'] ?? null),
+            transaction_status: self::toStringOrNull($payload['transaction_status'] ?? null),
+            x_signature: self::toStringOrNull($payload['x_signature'] ?? null),
             signature_valid: $signatureValid,
             extra: array_diff_key($payload, array_flip($knownKeys)),
         );

@@ -3,11 +3,13 @@
 namespace Izzudin96\Billplz\DTOs;
 
 use Izzudin96\Billplz\Concerns\NormalizesBooleans;
+use Izzudin96\Billplz\Concerns\NormalizesStrings;
 use JsonSerializable;
 
 final readonly class WebhookPayload implements JsonSerializable
 {
     use NormalizesBooleans;
+    use NormalizesStrings;
     public function __construct(
         public ?string $amount = null,
         public ?string $collection_id = null,
@@ -50,21 +52,21 @@ final readonly class WebhookPayload implements JsonSerializable
         ];
 
         return new self(
-            amount: isset($payload['amount']) ? (string) $payload['amount'] : null,
-            collection_id: isset($payload['collection_id']) ? (string) $payload['collection_id'] : null,
-            due_at: isset($payload['due_at']) ? (string) $payload['due_at'] : null,
-            email: isset($payload['email']) ? (string) $payload['email'] : null,
-            id: isset($payload['id']) ? (string) $payload['id'] : null,
-            mobile: isset($payload['mobile']) ? (string) $payload['mobile'] : null,
-            name: isset($payload['name']) ? (string) $payload['name'] : null,
-            paid_amount: isset($payload['paid_amount']) ? (string) $payload['paid_amount'] : null,
-            paid_at: isset($payload['paid_at']) ? (string) $payload['paid_at'] : null,
+            amount: self::toStringOrNull($payload['amount'] ?? null),
+            collection_id: self::toStringOrNull($payload['collection_id'] ?? null),
+            due_at: self::toStringOrNull($payload['due_at'] ?? null),
+            email: self::toStringOrNull($payload['email'] ?? null),
+            id: self::toStringOrNull($payload['id'] ?? null),
+            mobile: self::toStringOrNull($payload['mobile'] ?? null),
+            name: self::toStringOrNull($payload['name'] ?? null),
+            paid_amount: self::toStringOrNull($payload['paid_amount'] ?? null),
+            paid_at: self::toStringOrNull($payload['paid_at'] ?? null),
             paid: array_key_exists('paid', $payload) ? self::normalizeBoolean($payload['paid']) : null,
-            state: isset($payload['state']) ? (string) $payload['state'] : null,
-            transaction_id: isset($payload['transaction_id']) ? (string) $payload['transaction_id'] : null,
-            transaction_status: isset($payload['transaction_status']) ? (string) $payload['transaction_status'] : null,
-            url: isset($payload['url']) ? (string) $payload['url'] : null,
-            x_signature: isset($payload['x_signature']) ? (string) $payload['x_signature'] : null,
+            state: self::toStringOrNull($payload['state'] ?? null),
+            transaction_id: self::toStringOrNull($payload['transaction_id'] ?? null),
+            transaction_status: self::toStringOrNull($payload['transaction_status'] ?? null),
+            url: self::toStringOrNull($payload['url'] ?? null),
+            x_signature: self::toStringOrNull($payload['x_signature'] ?? null),
             signature_valid: $signatureValid,
             extra: array_diff_key($payload, array_flip($knownKeys)),
         );

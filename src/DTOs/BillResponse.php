@@ -3,11 +3,13 @@
 namespace Izzudin96\Billplz\DTOs;
 
 use Izzudin96\Billplz\Concerns\NormalizesBooleans;
+use Izzudin96\Billplz\Concerns\NormalizesStrings;
 use JsonSerializable;
 
 final readonly class BillResponse implements JsonSerializable
 {
     use NormalizesBooleans;
+    use NormalizesStrings;
     public function __construct(
         public ?string $id = null,
         public ?string $url = null,
@@ -61,26 +63,26 @@ final readonly class BillResponse implements JsonSerializable
         $extra = array_diff_key($payload, array_flip($knownKeys));
 
         return new self(
-            id: isset($payload['id']) ? (string) $payload['id'] : null,
-            url: isset($payload['url']) ? (string) $payload['url'] : null,
-            collection_id: isset($payload['collection_id']) ? (string) $payload['collection_id'] : null,
-            email: isset($payload['email']) ? (string) $payload['email'] : null,
-            mobile: isset($payload['mobile']) ? (string) $payload['mobile'] : null,
-            name: isset($payload['name']) ? (string) $payload['name'] : null,
+            id: self::toStringOrNull($payload['id'] ?? null),
+            url: self::toStringOrNull($payload['url'] ?? null),
+            collection_id: self::toStringOrNull($payload['collection_id'] ?? null),
+            email: self::toStringOrNull($payload['email'] ?? null),
+            mobile: self::toStringOrNull($payload['mobile'] ?? null),
+            name: self::toStringOrNull($payload['name'] ?? null),
             amount: isset($payload['amount']) && is_numeric($payload['amount']) ? (int) $payload['amount'] : null,
-            description: isset($payload['description']) ? (string) $payload['description'] : null,
-            callback_url: isset($payload['callback_url']) ? (string) $payload['callback_url'] : null,
-            redirect_url: isset($payload['redirect_url']) ? (string) $payload['redirect_url'] : null,
+            description: self::toStringOrNull($payload['description'] ?? null),
+            callback_url: self::toStringOrNull($payload['callback_url'] ?? null),
+            redirect_url: self::toStringOrNull($payload['redirect_url'] ?? null),
             reference_1: $payload['reference_1'] ?? null,
             reference_1_label: $payload['reference_1_label'] ?? null,
             reference_2: $payload['reference_2'] ?? null,
             reference_2_label: $payload['reference_2_label'] ?? null,
-            paid_at: isset($payload['paid_at']) ? (string) $payload['paid_at'] : null,
+            paid_at: self::toStringOrNull($payload['paid_at'] ?? null),
             paid: array_key_exists('paid', $payload) ? self::normalizeBoolean($payload['paid']) : null,
-            state: isset($payload['state']) ? (string) $payload['state'] : null,
-            transaction_id: isset($payload['transaction_id']) ? (string) $payload['transaction_id'] : null,
-            transaction_status: isset($payload['transaction_status']) ? (string) $payload['transaction_status'] : null,
-            x_signature: isset($payload['x_signature']) ? (string) $payload['x_signature'] : null,
+            state: self::toStringOrNull($payload['state'] ?? null),
+            transaction_id: self::toStringOrNull($payload['transaction_id'] ?? null),
+            transaction_status: self::toStringOrNull($payload['transaction_status'] ?? null),
+            x_signature: self::toStringOrNull($payload['x_signature'] ?? null),
             extra: $extra,
         );
     }
